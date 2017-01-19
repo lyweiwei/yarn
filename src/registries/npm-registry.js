@@ -50,19 +50,39 @@ export default class NpmRegistry extends Registry {
     return name.replace('/', '%2f');
   }
 
+  getConfig(name: string, url: string): string {
+    let key = '';
+    if (!url) {
+      return this.config[name] || null;
+    }
+    for (key in this.config) {
+      const value = this.config[key];
+      const [prefix, configName] = key.split(':');
+
+      if (configName === name && url.replace(/https?:/, '').startsWith(prefix)) {
+        return value;
+      }
+    }
+    return null;
+  }
+
   request(pathname: string, opts?: RegistryRequestOptions = {}): Promise<*> {
     const registry = addSuffix(this.getRegistry(pathname), '/');
     const requestUrl = url.resolve(registry, pathname);
-    const alwaysAuth = this.getScopedOption(registry.replace(/^https?:/, ''), 'always-auth')
-      || this.getOption('always-auth')
-      || removePrefix(requestUrl, registry)[0] === '@';
+    const alwaysAuth = this.getConfig('always-auth', requestUrl);
+    const token = this.getConfig('_authToken', requestUrl);
 
     const headers = {};
-    if (this.token || (alwaysAuth && requestUrl.startsWith(registry))) {
+
+    if (alwaysAuth || token) {
       const authorization = this.getAuth(pathname);
       if (authorization) {
         headers.authorization = authorization;
       }
+    }
+
+    if (token) {
+      headers.authorization = `Bearer ${token}`;
     }
 
     return this.requestManager.request({
@@ -176,7 +196,7 @@ export default class NpmRegistry extends Registry {
       registry = registry.replace(/^https?:/, '');
 
       // Check for bearer token.
-      let auth = this.getScopedOption(registry.replace(/\/?$/, '/'), '_authToken');
+      let auth = this.getConfig('_authToken');
       if (auth) {
         return `Bearer ${String(auth)}`;
       }
